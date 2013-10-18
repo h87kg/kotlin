@@ -29,6 +29,7 @@ import com.intellij.openapi.editor.markup.GutterIconRenderer;
 import com.intellij.openapi.module.Module;
 import com.intellij.openapi.module.ModuleUtilCore;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Ref;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.util.Function;
@@ -89,8 +90,7 @@ public class KotlinSignatureInJavaMarkerProvider implements LineMarkerProvider {
             return;
         }
 
-        Module module = ModuleUtilCore.findModuleForPsiElement(elements.get(0));
-        if (module == null || !KotlinFrameworkDetector.isJavaKotlinModule(module)) {
+        if (!isUsedInKotlinJavaModule(elements.get(0))) {
             return;
         }
 
@@ -117,9 +117,37 @@ public class KotlinSignatureInJavaMarkerProvider implements LineMarkerProvider {
             boolean hasSignatureAnnotation = KotlinSignatureUtil.findKotlinSignatureAnnotation(element) != null;
 
             if (errors != null || hasSignatureAnnotation) {
+                if (!hasSignatureAnnotation) {
+                    // TODO: Check that current java declaration is used in kotlin
+                }
+
                 result.add(new MyLineMarkerInfo((PsiModifierListOwner) element, errors, hasSignatureAnnotation));
             }
         }
+    }
+
+    private static boolean isUsedInKotlinJavaModule(PsiElement element) {
+        final Ref<Boolean> usedInKotlinModule = new Ref<Boolean>(false);
+        Module module = ModuleUtilCore.findModuleForPsiElement(element);
+        if (module != null) {
+            ModuleUtilCore.visitMeAndDependentModules(module, new ModuleUtilCore.ModuleVisitor() {
+                @Override
+                public boolean visit(Module module) {
+                    assert !usedInKotlinModule.get() : "Search should be stopped once kotlin dependency is found";
+
+                    if (KotlinFrameworkDetector.isJavaKotlinModule(module)) {
+                        usedInKotlinModule.set(true);
+
+                        // Stop traversing
+                        return false;
+                    }
+
+                    return true;
+                }
+            });
+        }
+
+        return usedInKotlinModule.get();
     }
 
     @NotNull
@@ -257,13 +285,11 @@ public class KotlinSignatureInJavaMarkerProvider implements LineMarkerProvider {
             if (annotation == null) return errorsString();
 
             String signature = KotlinSignatureUtil.getKotlinSignature(annotation);
-            String text = "Alternative Kotlin signature is available for this method:\n"
-                       + StringUtil.escapeXml(signature);
+            String text = "Alternative Kotlin signature is available for this method:\n" + StringUtil.escapeXml(signature);
             if (errors == null) {
                 return text;
             }
-            return text + "\nIt has the following " + StringUtil.pluralize("error", errors.size()) + ":\n"
-                   + errorsString();
+            return text + "\nIt has the following " + StringUtil.pluralize("error", errors.size()) + ":\n" + errorsString();
         }
 
         @NotNull
