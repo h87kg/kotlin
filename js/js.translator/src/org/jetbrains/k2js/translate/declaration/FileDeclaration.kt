@@ -15,13 +15,11 @@
  */
 package org.jetbrains.k2js.translate.declaration
 
-import com.google.dart.compiler.backend.js.ast.JsExpression
 import com.google.dart.compiler.backend.js.ast.JsNameRef
 import com.google.dart.compiler.backend.js.ast.JsPropertyInitializer
 import org.jetbrains.k2js.translate.initializer.InitializerVisitor
 import org.jetbrains.k2js.translate.utils.JsAstUtils
 import org.jetbrains.k2js.translate.context.TranslationContext
-import org.jetbrains.jet.lang.psi.JetClassInitializer
 import com.google.dart.compiler.backend.js.ast.JsStatement
 import org.jetbrains.k2js.translate.general.Translation
 import org.jetbrains.jet.lang.psi.JetProperty
@@ -32,6 +30,11 @@ import com.google.dart.compiler.backend.js.ast.JsFunction
 import org.jetbrains.k2js.translate.utils.BindingUtils.*
 import org.jetbrains.k2js.translate.initializer.InitializerUtils.*
 import org.jetbrains.jet.lang.descriptors.PropertyDescriptor
+import com.google.dart.compiler.backend.js.ast.JsName
+import org.jetbrains.jet.lang.descriptors.MemberDescriptor
+import org.jetbrains.k2js.translate.general.AbstractTranslator
+import org.jetbrains.jet.lang.psi.JetFile
+import com.intellij.util.SmartList
 
 class FileDeclarationVisitor(val context: TranslationContext) : DeclarationBodyVisitor() {
     private val initializer : JsFunction
@@ -39,6 +42,7 @@ class FileDeclarationVisitor(val context: TranslationContext) : DeclarationBodyV
     private val initializerContext : TranslationContext
     private val initializerVisitor : InitializerVisitor
 
+    val publicApi : MutableList<JsName> = SmartList<JsName>();
     {
         initializer = JsAstUtils.createFunctionWithEmptyBody(context.scope())
         initializerContext = context.contextWithScope(initializer)
@@ -54,23 +58,30 @@ class FileDeclarationVisitor(val context: TranslationContext) : DeclarationBodyV
         }
     }
 
-    public override fun visitClass(expression: JetClass, context : TranslationContext?) : Void? {
-        val entry = context!!.classDeclarationTranslator().translate(expression, context)
-        if (entry != null) {
-            result.add(entry)
+    fun addIfPublicApi(descriptor: MemberDescriptor) {
+        if (descriptor.getVisibility().isPublicAPI()) {
+            publicApi.add(context.getNameForDescriptor(descriptor));
         }
+    }
 
+    public override fun visitClass(expression: JetClass, context : TranslationContext?) : Void? {
+        val classDescriptor = getClassDescriptor(context!!.bindingContext(), expression)
+        val value = ClassTranslator(expression, context).translate()
+        val entry = JsPropertyInitializer(context.getNameForDescriptor(classDescriptor).makeRef()!!, value)
+        result.add(entry)
+
+        addIfPublicApi(classDescriptor)
         return null
     }
 
     public override fun visitObjectDeclaration(declaration : JetObjectDeclaration, context : TranslationContext?) : Void? {
         InitializerUtils.generateObjectInitializer(declaration, initializerStatements, context!!)
+        addIfPublicApi(getClassDescriptor(context.bindingContext(), declaration))
         return null
     }
 
     public override fun visitProperty(expression: JetProperty, context : TranslationContext?) : Void? {
-        if (context == null) throw IllegalStateException()
-
+        context!!
         super.visitProperty(expression, context)
         val initializer = expression.getInitializer()
         if (initializer != null) {
@@ -83,13 +94,8 @@ class FileDeclarationVisitor(val context: TranslationContext) : DeclarationBodyV
         if (delegate != null)
             initializerStatements.add(delegate)
 
+        addIfPublicApi(getPropertyDescriptor(context.bindingContext(), expression))
         return null
     }
-
-    public override fun visitAnonymousInitializer(expression : JetClassInitializer, context : TranslationContext?) : Void? {
-        expression.accept(initializerVisitor, initializerContext)
-        return null
-    }
-
 
 }
