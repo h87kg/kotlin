@@ -35,10 +35,6 @@ import org.jetbrains.jet.lang.descriptors.MemberDescriptor
 import org.jetbrains.k2js.translate.general.AbstractTranslator
 import org.jetbrains.jet.lang.psi.JetFile
 import com.intellij.util.SmartList
-import com.google.dart.compiler.backend.js.ast.JsVisitor
-import com.google.dart.compiler.backend.js.ast.JsNode
-import com.google.dart.compiler.backend.js.ast.JsEmpty
-import com.google.dart.compiler.backend.js.ast.JsBlock
 import org.jetbrains.jet.lang.descriptors.NamespaceDescriptor
 import org.jetbrains.jet.lang.resolve.BindingContext
 import com.google.dart.compiler.backend.js.ast.JsObjectLiteral
@@ -49,22 +45,27 @@ import com.intellij.openapi.util.NotNullLazyValue
 import org.jetbrains.k2js.translate.expression.LiteralFunctionTranslator
 import org.jetbrains.k2js.translate.utils.BindingUtils
 import org.jetbrains.k2js.translate.utils.AnnotationsUtils
-import com.google.dart.compiler.backend.js.ast.JsScope
 import org.jetbrains.k2js.translate.utils.TranslationUtils
-
-
-class TranslatedFile(val name: JsName, val qualifier: JsNameRef, val fileStatement: JsStatement, val publicProperties: List<JsName>)
+import com.google.dart.compiler.backend.js.ast.JsInvocation
+import org.jetbrains.k2js.translate.context.Namer
+import com.google.dart.compiler.backend.js.ast.JsStringLiteral
+import com.google.dart.compiler.backend.js.ast.JsArrayLiteral
+import com.google.dart.compiler.backend.js.ast.JsLiteral
+import org.jetbrains.jet.lang.psi.JetNamedFunction
+import org.jetbrains.k2js.translate.utils.JsDescriptorUtils
+import com.google.dart.compiler.backend.js.ast.JsDocComment
+import com.google.dart.compiler.backend.js.ast.JsBlock
 
 class FileTranslator private (val file: JetFile, val context: TranslationContext, val descriptor: NamespaceDescriptor) : AbstractTranslator(context) {
     class object {
-        fun translateFile(file: JetFile, context: TranslationContext) : TranslatedFile {
+        fun translateFile(file: JetFile, context: TranslationContext): JsStatement {
             val descriptor = context.bindingContext().get(BindingContext.FILE_TO_NAMESPACE, file)!!
             return FileTranslator(file, context, descriptor).translate()
         }
     }
 
     private val objectLiteral: JsObjectLiteral = JsObjectLiteral(true);
-    private val visitor = FileDeclarationVisitor(context)
+    private val visitor = FileDeclarationVisitor(context, objectLiteral.getPropertyInitializers()!!)
 
     private val definitionPlace = object : NotNullLazyValue<Trinity<List<JsPropertyInitializer>, LabelGenerator, JsExpression>>() {
         override fun compute(): Trinity<List<JsPropertyInitializer>, LabelGenerator, JsExpression> {
@@ -72,11 +73,39 @@ class FileTranslator private (val file: JetFile, val context: TranslationContext
         }
     }
 
-    private fun createFileStatement(): JsStatement {
-        throw UnsupportedOperationException()
+    private fun createStringLiteral(str: String): JsStringLiteral {
+        return context.program().getStringLiteral(str)!!;
     }
 
-    fun translate(): TranslatedFile {
+    private fun getShortFileName(file: JetFile): String {
+        val name = file.getName()
+        val index = name.lastIndexOf('/')
+        return if (index < 0)
+            name
+        else
+            name.substring(index + 1)
+    }
+
+    private fun createPublicApiArray(): JsArrayLiteral {
+        return JsArrayLiteral(visitor.publicApi.map { createStringLiteral(it.getIdent()!!) })
+    }
+
+    private fun createFileStatement(): JsStatement {
+        val packageName = file.getPackageName() ?: ""
+        val invocation = JsInvocation(context.namer().getAddPackagePart())
+
+        val args = invocation.getArguments()!!
+        args.add(JsNameRef(Namer.getRootNamespaceName()));
+        args.add(createStringLiteral(packageName))
+        args.add(visitor.computeInitializer() ?: JsLiteral.NULL)
+
+        val packageRef = if (packageName == "") "_" else "_.$packageName"
+        args.add(JsDocComment(JsAstUtils.LENDS_JS_DOC_TAG, packageRef))
+        args.add(JsObjectLiteral(visitor.getResult(), true))
+        return invocation.makeStmt()!!
+    }
+
+    fun translate(): JsStatement {
         context.literalFunctionTranslator().setDefinitionPlace(definitionPlace)
             for (declaration in file.getDeclarations()) {
                 if (!AnnotationsUtils.isPredefinedObject(BindingUtils.getDescriptorForElement(bindingContext(), declaration))) {
@@ -84,14 +113,12 @@ class FileTranslator private (val file: JetFile, val context: TranslationContext
                 }
             }
         context.literalFunctionTranslator().setDefinitionPlace(null)
-        val fullQualifer = context.getQualifiedReference(descriptor)
-        val fileName = context.scope().declareName(TranslationUtils.getMangledName(file))!!
-        return TranslatedFile(fileName, fullQualifer, createFileStatement(), visitor.publicApi)
+        return createFileStatement()
     }
 }
 
 
-class FileDeclarationVisitor(val context: TranslationContext) : DeclarationBodyVisitor() {
+class FileDeclarationVisitor(val context: TranslationContext, result: List<JsPropertyInitializer>) : DeclarationBodyVisitor(result, SmartList<JsPropertyInitializer>()) {
     private val initializer : JsFunction
     private val initializerStatements : MutableList<JsStatement>
     private val initializerContext : TranslationContext
@@ -113,35 +140,38 @@ class FileDeclarationVisitor(val context: TranslationContext) : DeclarationBodyV
         }
     }
 
-    fun addIfPublicApi(descriptor: MemberDescriptor) {
+    private fun addIfPublicApi(descriptor: MemberDescriptor) {
         if (descriptor.getVisibility().isPublicAPI()) {
             publicApi.add(context.getNameForDescriptor(descriptor));
         }
     }
 
+    private fun addToResult(descriptor: MemberDescriptor, value: JsExpression) {
+        val entry = JsPropertyInitializer(context.getNameForDescriptor(descriptor).makeRef()!!, value)
+        result.add(entry)
+        addIfPublicApi(descriptor)
+    }
+
     public override fun visitClass(expression: JetClass, context : TranslationContext?) : Void? {
         val classDescriptor = getClassDescriptor(context!!.bindingContext(), expression)
         val value = ClassTranslator(expression, context).translate()
-        val entry = JsPropertyInitializer(context.getNameForDescriptor(classDescriptor).makeRef()!!, value)
-        result.add(entry)
-
-        addIfPublicApi(classDescriptor)
+        addToResult(classDescriptor, value)
         return null
     }
 
     public override fun visitObjectDeclaration(declaration : JetObjectDeclaration, context : TranslationContext?) : Void? {
-        InitializerUtils.generateObjectInitializer(declaration, initializerStatements, context!!)
-        addIfPublicApi(getClassDescriptor(context.bindingContext(), declaration))
+        val classDescriptor = getClassDescriptor(context!!.bindingContext(), declaration)
+        InitializerUtils.generateObjectInitializer(declaration, initializerStatements, context)
+        addToResult(classDescriptor, context.namer().getUndefinedExpression())
         return null
     }
 
     public override fun visitProperty(expression: JetProperty, context : TranslationContext?) : Void? {
-        context!!
+        val propertyDescriptor = getPropertyDescriptor(context!!.bindingContext(), expression)
         super.visitProperty(expression, context)
         val initializer = expression.getInitializer()
         if (initializer != null) {
             val value = Translation.translateAsExpression(initializer, initializerContext)
-            val propertyDescriptor : PropertyDescriptor = getPropertyDescriptor(context.bindingContext(), expression)
             initializerStatements.add(generateInitializerForProperty(context, propertyDescriptor, value))
         }
 
@@ -149,8 +179,19 @@ class FileDeclarationVisitor(val context: TranslationContext) : DeclarationBodyV
         if (delegate != null)
             initializerStatements.add(delegate)
 
-        addIfPublicApi(getPropertyDescriptor(context.bindingContext(), expression))
+        if (JsDescriptorUtils.isSimpleFinalProperty(propertyDescriptor)) { // for enother kind of property result has JsObjectLiteral for this property
+            addToResult(propertyDescriptor, context.namer().getUndefinedExpression())
+        } else {
+            addIfPublicApi(propertyDescriptor)
+        }
         return null
     }
 
+
+    override fun visitNamedFunction(expression: JetNamedFunction, context: TranslationContext?): Void? {
+        super<DeclarationBodyVisitor>.visitNamedFunction(expression, context)
+
+        addIfPublicApi(getFunctionDescriptor(context!!.bindingContext(), expression))
+        return null;
+    }
 }
