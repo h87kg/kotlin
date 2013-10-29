@@ -720,6 +720,28 @@ public class TypeUtils {
         });
     }
 
+    public static TypeSubstitutor makeSubstitutorForTypeParametersMap(
+           @NotNull final Map<TypeParameterDescriptor, TypeProjection> substitutionContext
+    ) {
+        return TypeSubstitutor.create(new TypeSubstitution() {
+            @Nullable
+            @Override
+            public TypeProjection get(TypeConstructor key) {
+                DeclarationDescriptor declarationDescriptor = key.getDeclarationDescriptor();
+                if (declarationDescriptor instanceof TypeParameterDescriptor) {
+                    TypeParameterDescriptor descriptor = (TypeParameterDescriptor) declarationDescriptor;
+                    return substitutionContext.get(descriptor);
+                }
+                return null;
+            }
+
+            @Override
+            public boolean isEmpty() {
+                return substitutionContext.isEmpty();
+            }
+        });
+    }
+
     private static abstract class AbstractTypeWithKnownNullability extends AbstractJetType {
         private final JetType delegate;
 
