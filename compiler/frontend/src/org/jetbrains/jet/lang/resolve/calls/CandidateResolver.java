@@ -347,7 +347,7 @@ public class CandidateResolver {
         context = context.replaceExpectedType(expectedType);
 
         JetExpression keyExpression = getDeferredComputationKeyExpression(expression);
-        CallCandidateResolutionContext<FunctionDescriptor> storedContextForArgument =
+        CallCandidateResolutionContext<? extends CallableDescriptor> storedContextForArgument =
                 context.resolutionResultsCache.getDeferredComputation(keyExpression);
 
         if (storedContextForArgument == null) {
@@ -361,7 +361,7 @@ public class CandidateResolver {
             return;
         }
 
-        CallCandidateResolutionContext<FunctionDescriptor> contextForArgument = storedContextForArgument
+        CallCandidateResolutionContext<? extends CallableDescriptor> contextForArgument = storedContextForArgument
                 .replaceContextDependency(INDEPENDENT).replaceBindingTrace(context.trace).replaceExpectedType(expectedType);
         JetType type;
         if (contextForArgument.candidateCall.hasIncompleteTypeParameters()) {
