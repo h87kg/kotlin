@@ -36,6 +36,11 @@ public class CheckLocalVariablesTableTestGenerated extends AbstractCheckLocalVar
         JetTestUtils.assertAllTestsPresentByMetadata(this.getClass(), "org.jetbrains.jet.generators.tests.GenerateTests", new File("compiler/testData/checkLocalVariablesTable"), Pattern.compile("^(.+)\\.kt$"), true);
     }
     
+    @TestMetadata("sharedVarNames.kt")
+    public void testSharedVarNames() throws Exception {
+        doTest("compiler/testData/checkLocalVariablesTable/sharedVarNames.kt");
+    }
+    
     @TestMetadata("someClass.kt")
     public void testSomeClass() throws Exception {
         doTest("compiler/testData/checkLocalVariablesTable/someClass.kt");

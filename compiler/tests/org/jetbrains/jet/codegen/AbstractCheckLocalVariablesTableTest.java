@@ -74,6 +74,8 @@ public abstract class AbstractCheckLocalVariablesTableTest extends TestCaseWithT
                 isClassFound = true;
                 ClassReader cr = new ClassReader(factory.asBytes(filename));
                 List<LocalVariable> expectedLocalVariables = parseExpectations();
+                // TODO add expected class name to test data
+                // TODO refactor to getLastCommentedLines()
                 List<LocalVariable> actualLocalVariables = readLocalVariable(cr, parseMethodName());
 
                 assertEquals("Count of variables are different", expectedLocalVariables.size(), actualLocalVariables.size());
