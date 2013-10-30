@@ -310,7 +310,7 @@ public class CandidateResolver {
 
         context.tracing.typeInferenceFailed(context.trace, errorData);
         resolvedCall.addStatus(ResolutionStatus.OTHER_ERROR);
-        if (!CallResolverUtil.hasInferredReturnType(resolvedCall)) return null;
+        if (!resolvedCall.hasInferredReturnType()) return null;
         return resolvedCall.getResultingDescriptor().getReturnType();
     }
 
@@ -346,12 +346,12 @@ public class CandidateResolver {
         CallCandidateResolutionContext<? extends CallableDescriptor> storedContextForArgument =
                 context.resolutionResultsCache.getDeferredComputation(keyExpression);
 
+        PsiElement parent = expression.getParent();
+        if (parent instanceof JetWhenExpression && expression == ((JetWhenExpression) parent).getSubjectExpression()
+            || (expression instanceof JetFunctionLiteralExpression)) {
+            return;
+        }
         if (storedContextForArgument == null) {
-            PsiElement parent = expression.getParent();
-            if (parent instanceof JetWhenExpression && expression == ((JetWhenExpression) parent).getSubjectExpression()
-                || (expression instanceof JetFunctionLiteralExpression)) {
-                return;
-            }
             JetType type = argumentTypeResolver.updateResultArgumentTypeIfNotDenotable(context, expression);
             checkResultArgumentType(type, argument, context);
             return;

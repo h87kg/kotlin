@@ -31,6 +31,7 @@ import org.jetbrains.jet.lang.resolve.calls.context.*;
 import org.jetbrains.jet.lang.resolve.calls.model.MutableDataFlowInfoForArguments;
 import org.jetbrains.jet.lang.resolve.calls.model.ResolvedCallImpl;
 import org.jetbrains.jet.lang.resolve.calls.model.ResolvedCallWithTrace;
+import org.jetbrains.jet.lang.resolve.calls.model.VariableAsFunctionResolvedCall;
 import org.jetbrains.jet.lang.resolve.calls.results.OverloadResolutionResults;
 import org.jetbrains.jet.lang.resolve.calls.results.OverloadResolutionResultsImpl;
 import org.jetbrains.jet.lang.resolve.calls.results.ResolutionDebugInfo;
@@ -336,6 +337,7 @@ public class CallResolver {
             }
             return;
         }
+        if (results.getResultingCall() instanceof VariableAsFunctionResolvedCall) return;
         CallCandidateResolutionContext<D> candidateContext = CallCandidateResolutionContext.createForCallBeingAnalyzed(
                 results.getResultingCall().getCallToCompleteTypeArgumentInference(), context, tracing);
         candidateResolver.completeTypeInferenceDependentOnFunctionLiteralsForCall(candidateContext);
