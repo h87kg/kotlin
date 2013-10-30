@@ -390,9 +390,10 @@ public class CallResolver {
         context.resolutionResultsCache.recordResolutionTrace(callKey, deltasTraceToCacheResolve);
 
         if (results.isSingleResult()) {
+            ResolvedCallWithTrace<F> resultingCall = results.getResultingCall();
             CallCandidateResolutionContext<F> callCandidateResolutionContext = CallCandidateResolutionContext.createForCallBeingAnalyzed(
                     results.getResultingCall().getCallToCompleteTypeArgumentInference(), context, tracing);
-            context.resolutionResultsCache.recordDeferredComputationForCall(callKey, callCandidateResolutionContext);
+            context.resolutionResultsCache.recordDeferredComputationForCall(callKey, resultingCall, callCandidateResolutionContext);
         }
     }
 
